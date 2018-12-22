@@ -46,10 +46,22 @@ func (y *YoutubeResolver) ResolveLink(t *music.Track) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(resp.Items) > 0 {
-		return fmt.Sprintf("https://youtu.be/%s", resp.Items[0].Id.VideoId), nil
+	if len(resp.Items) > 0 && resp.Items[0].Id != nil {
+		return fmt.Sprintf("https://youtu.be/%s", extractId(resp.Items[0].Id)), nil
 	}
 	return "", nil
+}
+
+func extractId(resId *youtube.ResourceId) string {
+	switch {
+	case resId.VideoId != "":
+		return resId.VideoId
+	case resId.PlaylistId != "":
+		return resId.PlaylistId
+	case resId.ChannelId != "":
+		return resId.ChannelId
+	}
+	return ""
 }
 
 var emptyId = errors.New("ID is empty")

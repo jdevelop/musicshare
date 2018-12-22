@@ -12,6 +12,16 @@ const (
 	YouTube
 )
 
+func ServiceToHumanName(svc Service) string {
+	switch svc {
+	case Spotify:
+		return "Spotify"
+	case YouTube:
+		return "Youtube"
+	}
+	return "Unknown"
+}
+
 func Service2String(svc Service) string {
 	switch svc {
 	case Spotify:

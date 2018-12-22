@@ -1,30 +1,43 @@
 package main
 
 import (
-	"github.com/jdevelop/musicshare/music"
-	"github.com/jdevelop/musicshare/music/spotify"
-	"github.com/jdevelop/musicshare/music/spotify/token"
-	"github.com/jdevelop/musicshare/music/youtube"
-	"github.com/jdevelop/musicshare/telegram"
+	"flag"
 	"log"
 	"os"
 	"os/user"
 	"path/filepath"
 	"time"
+
+	"github.com/jdevelop/musicshare/music"
+	"github.com/jdevelop/musicshare/music/spotify"
+	"github.com/jdevelop/musicshare/music/spotify/token"
+	"github.com/jdevelop/musicshare/music/youtube"
+	"github.com/jdevelop/musicshare/telegram"
+)
+
+var (
+	tokenPath = flag.String("path", "", "Token storage path")
 )
 
 func main() {
+
+	flag.Parse()
+
 	var (
 		spf *spotify.SpotifyResolver
 		err error
+		p   string
 	)
 
 	u, err := user.Current()
-	if err != nil {
-		log.Fatal("Can't get current user ", err)
+	switch {
+	case *tokenPath != "" && err != nil:
+		p = *tokenPath
+	case err == nil && *tokenPath == "":
+		p = filepath.Join(u.HomeDir, ".musicshare_token")
+	case err != nil:
+		log.Fatal(err)
 	}
-
-	p := filepath.Join(u.HomeDir, ".musicshare_token")
 
 	ts, err := token.NewFileStorage(p)
 	if err != nil {

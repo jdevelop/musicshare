@@ -87,8 +87,9 @@ func (t *TelegramBot) Connect(resolver *music.ResolverService) error {
 					id, svc := resolver.ResolveServiceAndId(m.InlineQuery.Query)
 					switch {
 					case id != "":
+						name := music.ServiceToHumanName(svc)
 						msgs := make([]interface{}, 1)
-						reply := tgbotapi.NewInlineQueryResultArticle(id, "Resolving...", "Track...")
+						reply := tgbotapi.NewInlineQueryResultArticle(id, name, name)
 						kbds := make([][]tgbotapi.InlineKeyboardButton, 1)
 						svcStr := music.Service2String(svc)
 						for _, ks := range serviceKbds {
