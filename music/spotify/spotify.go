@@ -1,15 +1,15 @@
 package spotify
 
 import (
-	"errors"
+	"bufio"
 	"fmt"
+	"log"
+	"net/url"
+	"os"
+	"time"
+
 	"github.com/jdevelop/musicshare/music"
 	"github.com/jdevelop/musicshare/music/spotify/token"
-	"log"
-	"math/rand"
-	"net/http"
-	"net/url"
-	"time"
 
 	"github.com/zmb3/spotify"
 	"golang.org/x/oauth2"
@@ -52,34 +52,10 @@ func (s *SpotifyResolver) ResolveTrack(id string) (*music.Track, error) {
 	}, nil
 }
 
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-func RandStringBytes(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
-	}
-	return string(b)
-}
-
-type hostport struct {
-	host string
-	port string
-}
-
-func buildAuth(client, secret, callback string) (*spotify.Authenticator, *hostport, error) {
-	cb, err := url.Parse(callback)
-	if err != nil {
-		return nil, nil, err
-	}
-	host := cb.Hostname()
-	port := cb.Port()
-	if port == "" {
-		port = "80"
-	}
+func buildAuth(client, secret, callback string) (*spotify.Authenticator, error) {
 	auth := spotify.NewAuthenticator(callback)
 	auth.SetAuthInfo(client, secret)
-	return &auth, &hostport{host: host, port: port}, nil
+	return &auth, nil
 }
 
 func (s *SpotifyResolver) startRefresh() {
@@ -90,7 +66,7 @@ func (s *SpotifyResolver) startRefresh() {
 }
 
 func NewClientToken(client, secret, callback string, ts token.TokenStorage) (*SpotifyResolver, error) {
-	auth, _, err := buildAuth(client, secret, callback)
+	auth, err := buildAuth(client, secret, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -100,64 +76,54 @@ func NewClientToken(client, secret, callback string, ts token.TokenStorage) (*Sp
 	}
 	c := auth.NewClient(t)
 	r := &SpotifyResolver{
-		client: c,
+		client:       c,
+		tokenStorage: ts,
 	}
-	log.Println("1")
 	r.startRefresh()
-	log.Println("2")
 	return r, nil
 }
 
 func NewClient(client, secret, callback string, ts token.TokenStorage) (*SpotifyResolver, error) {
-	auth, hp, err := buildAuth(client, secret, callback)
+	auth, err := buildAuth(client, secret, callback)
 	if err != nil {
 		return nil, err
 	}
-	state := RandStringBytes(7)
-	fmt.Println(auth.AuthURL(state))
-	done := make(chan struct{})
-
+	state := "persistent"
+	fmt.Println("Open the following URL:", auth.AuthURL(state))
+	fmt.Println("Paste the resulting URL below")
 	var (
-		sc *spotify.Client
+		sc spotify.Client
 	)
 
-	var serve http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
-		token, err := auth.Token(state, r)
+	for s := bufio.NewScanner(os.Stdin); s.Scan(); {
+		u, err := url.Parse(s.Text())
 		if err != nil {
-			http.Error(w, "Couldn't get token", http.StatusNotFound)
-			return
+			log.Println("Error parsing URL, please try again", err)
+			continue
 		}
-		log.Printf("Client token '%s'\n", token.AccessToken)
-		if err := ts.SaveToken(token); err != nil {
-			log.Println("Can't save token", err)
+		if t := u.Query().Get("code"); t == "" {
+			log.Printf("No 'code' parameter found in %s\n", s.Text())
+			continue
+		} else {
+			if tkn, err := auth.Exchange(t); err != nil {
+				log.Println("Can't exchange token %s => %v\n", t, err)
+				continue
+			} else {
+				if err := ts.SaveToken(tkn); err != nil {
+					log.Fatal("Can't save token", err)
+				}
+				sc = auth.NewClient(tkn)
+				break
+			}
 		}
-		// create a client using the specified token
-		c := auth.NewClient(token)
-		sc = &c
-		close(done)
 	}
 
-	s := http.Server{
-		Addr:    hp.host + ":" + hp.port,
-		Handler: serve,
+	r := &SpotifyResolver{
+		client:       sc,
+		tokenStorage: ts,
 	}
-	defer s.Close()
-
-	go func() {
-		log.Printf("Starting server at %s:%s\n", hp.host, hp.port)
-		s.ListenAndServe()
-	}()
-
-	select {
-	case <-done:
-		r := &SpotifyResolver{
-			client: *sc,
-		}
-		r.startRefresh()
-		return r, nil
-	case <-time.After(60 * time.Second):
-		return nil, errors.New("can't get the response token in 60 seconds")
-	}
+	r.startRefresh()
+	return r, nil
 }
 
 var _ music.TrackResolver = &SpotifyResolver{}
